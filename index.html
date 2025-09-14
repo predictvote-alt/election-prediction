@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>The Gambia Election Prediction 2025 — Live Votes</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body{font-family:Arial,sans-serif;margin:0;padding:0;background:linear-gradient(135deg,#4facfe,#00f2fe);color:#222;text-align:center;}
+    header{padding:28px;color:#fff;}
+    h1{margin:0;font-size:2rem;text-shadow:0 3px 14px rgba(0,0,0,.18);}
+    h1 img{width:50px; vertical-align:middle; margin-left:10px; border-radius:4px;}
+    .container{max-width:1200px;margin:30px auto;display:flex;flex-wrap:wrap;gap:18px;justify-content:center;padding:0 12px;}
+    .card{width:230px;background:#fff;border-radius:14px;padding:16px;box-shadow:0 10px 28px rgba(0,0,0,.12);transition:transform .25s;}
+    .card:hover{transform:translateY(-8px);}
+    .card img{width:100%;height:160px;object-fit:cover;border-radius:10px;}
+    .name{font-weight:600;margin:10px 0 6px;}
+    .btn{display:inline-block;padding:9px 18px;border-radius:24px;border:none;cursor:pointer;background:linear-gradient(135deg,#4facfe,#00f2fe);color:#fff;}
+    .votes{margin-top:10px;font-weight:700;}
+    .progress{height:12px;background:#eee;border-radius:8px;margin-top:8px;overflow:hidden;}
+    .fill{height:100%;width:0%;transition:width .5s linear;background:linear-gradient(90deg,#4facfe,#43e97b);}
+    #message{margin:15px;font-weight:600;color:#fff;}
+    /* Beautiful reset button */
+    #resetBtn {
+      margin-top: 15px;
+      padding: 12px 28px;
+      border-radius: 30px;
+      border: none;
+      font-size: 16px;
+      font-weight: bold;
+      background: linear-gradient(135deg, #ff416c, #ff4b2b);
+      color: #fff;
+      cursor: pointer;
+      box-shadow: 0 8px 20px rgba(255,75,43,0.4);
+      transition: all 0.3s ease;
+    }
+    #resetBtn:hover {
+      transform: translateY(-4px) scale(1.05);
+      box-shadow: 0 12px 24px rgba(255,75,43,0.6);
+    }
+    @media(max-width:600px){.card{width:46%;}}
+    @media(max-width:420px){.card{width:100%;}}
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>
+    The Gambia Election Prediction 2025
+    <img src="images/gambia-flag.png" alt="Gambia Flag">
+  </h1>
+  <div>Click your favorite candidate — votes are saved live</div>
+  <!-- Reset button -->
+  <button id="resetBtn">Reset All Votes</button>
+</header>
+
+<!-- Message Area -->
+<div id="message"></div>
+
+<div class="container" id="candidates"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, increment, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js";
+
+// Firebase config
+const firebaseConfig = {
+  apiKey: "AIzaSyBWg3MHcaibz51elv6PzXzMrz4ER0katjQ",
+  authDomain: "voting-poll-b9bad.firebaseapp.com",
+  projectId: "voting-poll-b9bad",
+  storageBucket: "voting-poll-b9bad.appspot.com",
+  messagingSenderId: "528149688458",
+  appId: "1:528149688458:web:8f8f52d95305934d1bfd73",
+  measurementId: "G-7EF67YFZGT"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// Candidate list
+const candidates = [
+  { id: "a", name: "Adama Barrow", img: "images/barrow.jpg" },
+  { id: "b", name: "Ousainou Darboe", img: "images/darboe.jpg" },
+  { id: "c", name: "Mamma Kandeh", img: "images/mamma.jpg" },
+  { id: "d", name: "Talib Bansouda", img: "images/bensouda.jpg" },
+  { id: "e", name: "Essa Fall", img: "images/faal.jpg" }
+];
+
+const container = document.getElementById("candidates");
+const messageEl = document.getElementById("message");
+const resetBtn = document.getElementById("resetBtn");
+
+// Seed candidates in Firestore
+async function seedCandidates() {
+  const promises = candidates.map(async (c) => {
+    const ref = doc(db, "candidates", c.id);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) {
+      await setDoc(ref, { name: c.name, votes: 0, img: c.img });
+    }
+  });
+  await Promise.all(promises);
+}
+
+// Render candidate cards
+function render(candidateMap) {
+  const totalVotes = Object.values(candidateMap).reduce((sum, c) => sum + (c.votes||0), 0);
+  container.innerHTML = "";
+  candidates.forEach(c => {
+    const data = candidateMap[c.id] || { votes: 0 };
+    const pct = totalVotes > 0 ? ((data.votes / totalVotes) * 100).toFixed(1) : 0;
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `
+      <img src="${c.img}" alt="${c.name}" onerror="this.style.filter='grayscale(60%)'">
+      <div class="name">${c.name}</div>
+      <button class="btn">Vote</button>
+      <div class="votes">Votes: ${data.votes} — ${pct}%</div>
+      <div class="progress"><div class="fill" style="width:${pct}%;"></div></div>
+    `;
+    card.querySelector(".btn").addEventListener("click", () => vote(c.id));
+    container.appendChild(card);
+  });
+}
+
+// Vote function — ensures one vote per browser
+async function vote(candidateId) {
+  if (localStorage.getItem("hasVoted")) {
+    messageEl.textContent = "🚫 You have already voted!";
+    messageEl.style.color = "#FF0000";
+    return;
+  }
+
+  const ref = doc(db, "candidates", candidateId);
+  try {
+    await updateDoc(ref, { votes: increment(1) });
+    localStorage.setItem("hasVoted", "true");
+    messageEl.textContent = "✅ Thank you for voting!";
+    messageEl.style.color = "#00ff99";
+  } catch(e) {
+    console.error("Vote error:", e);
+    messageEl.textContent = "❌ Vote failed. Try again.";
+    messageEl.style.color = "#ff4d4d";
+  }
+}
+
+// Admin-only reset
+resetBtn.addEventListener("click", async () => {
+  const adminPassword = "MySecret123"; // change this
+  const entered = prompt("Enter admin password to reset all votes:");
+  if (entered !== adminPassword) {
+    alert("Incorrect password. Votes not reset.");
+    return;
+  }
+  if (!confirm("Are you sure you want to reset all votes?")) return;
+
+  const promises = candidates.map(c => {
+    const ref = doc(db, "candidates", c.id);
+    return setDoc(ref, { name: c.name, votes: 0, img: c.img });
+  });
+  await Promise.all(promises);
+
+  localStorage.removeItem("hasVoted");
+  messageEl.textContent = "";
+  messageEl.style.color = "#fff";
+
+  alert("All votes have been reset. Users can vote again!");
+});
+
+// Real-time listener
+function startRealtimeListener() {
+  const colRef = collection(db, "candidates");
+  onSnapshot(colRef, snapshot => {
+    const map = {};
+    snapshot.forEach(doc => map[doc.id] = doc.data());
+    render(map);
+  }, err => console.error("Snapshot error:", err));
+}
+
+// Initialize
+(async function init() {
+  await seedCandidates();
+  startRealtimeListener();
+})();
+</script>
+
+</body>
+</html>
